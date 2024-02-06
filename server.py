@@ -1,7 +1,12 @@
+import json
 import socket
 import threading
 import datetime
 db = {}
+
+def write_to_file():
+    with open("dump.json", "w") as out_file:
+        json.dump(db, out_file, default=str)
 
 def custom_error(*args):
     return "ERROR"
@@ -9,6 +14,7 @@ def custom_error(*args):
 def set_value(*args):
     if len(args) == 2:
         db[args[0]] = {"value": args[1]}
+        write_to_file()
         return "ok"
 
     if len(args) == 3:
@@ -16,6 +22,7 @@ def set_value(*args):
             "value": args[1], 
             "exp": datetime.datetime.now() + datetime.timedelta(0, int(args[2]))
         }
+        write_to_file()
         return "ok"
 
     return custom_error()
@@ -29,7 +36,7 @@ def get_value(*args):
         return row
     
     if "exp" in row.keys() and (row.get("exp") - datetime.datetime.now()).total_seconds() < 0:
-        del[*args[0]]
+        del[args[0]]
         return "null"
     
     return row.get("value")
@@ -40,18 +47,31 @@ def delete_key(*args):
 
     if args[0] in db.keys():
         del db[args[0]]
+        write_to_file()
         return "OK"
     
     return "null"
 
 def get_ttl(*args):
+    row = db.get(args[0], "null") 
+    if row == "null":
+        return "-2"
 
-
-
+    if "exp" not in row.keys():
+        return "-1"
+    
+    exp_time = (row.get("exp") - datetime.datetime.now()).total_seconds()
+    if "exp" in row.keys() and exp_time < 0:
+        del[args[0]]
+        return str(-2)
+    
+    return str(int(exp_time))
+    
 command_dict = {
     "set":set_value,
     "get": get_value,
     "del": delete_key,
+    "ttl": get_ttl,
     "error": custom_error
 }
 
@@ -72,13 +92,12 @@ def handle_client_connection(client_socket):
         client_socket.send(result.encode())
     client_socket.close()
 
-
-
 def start_server(host='127.0.0.1', port=6378):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((host, port)) 
     server.listen(5)
     print(f'Server started on {host}:{port}')
+
     while True:
         client_sock, address = server.accept()
         print(f'Accepted connection from {address[0]}:{address[1]}')
